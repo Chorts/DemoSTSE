@@ -41,4 +41,6 @@ function hitungTotal(items, kodeVoucher) {
   return { subtotal, diskon, total: subtotal - diskon };
 }
 
+
+//tes
 module.exports = { hitungSubtotal, hitungTotal, VOUCHERS };
