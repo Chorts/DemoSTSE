@@ -14,15 +14,66 @@
 //       }
 //       post {
 //         always {
-//           junit testResults: 'reports/junit.xml', allowEmptyResults: true
+//           junit testResults: 'repor  ts/junit.xml', allowEmptyResults: true
 //         }
 //       }
 //     }
 //   }
 // }
 
+// pipeline {
+//   agent any
+//   stages {
+//     stage('Test') {
+//       agent {
+//         docker {
+//           image 'node:22-alpine'
+//           reuseNode true
+//         }
+//       }
+//       steps {
+//         sh 'npm ci --cache .npm'
+//         sh 'npm run test:ci'
+//       }
+//       post {
+//         always {
+//           junit testResults: 'reports/junit.xml', allowEmptyResults: true
+//         }
+//       }
+//     }
+
+//     stage('Build Image') {
+//       steps {
+//         sh 'docker compose build'
+//       }
+//     }
+
+//     stage('Deploy') {
+//       steps {
+//         sh 'docker compose up -d --wait'
+//       }
+//     }
+//   }
+
+//   post {
+//     success {
+//       echo 'Pipeline berhasil: cart-api berjalan di port 3000'
+//     }
+//     failure {
+//       echo 'Pipeline gagal: cek stage yang berwarna merah'
+//     }
+//   }
+// }
+
+
+
 pipeline {
   agent any
+
+  environment {
+    IMAGE = 'username/cart-api'
+  }
+
   stages {
     stage('Test') {
       agent {
@@ -32,6 +83,11 @@ pipeline {
         }
       }
       steps {
+        script {
+          env.TAG = sh(returnStdout: true,
+            script: 'git rev-parse --short HEAD').trim()
+        }
+
         sh 'npm ci --cache .npm'
         sh 'npm run test:ci'
       }
@@ -42,27 +98,53 @@ pipeline {
       }
     }
 
-    stage('Build Image') {
+    stage('Build & Push') {
+      when {
+        anyOf {
+          branch 'dev'
+          branch 'qa'
+          branch 'prod'
+        }
+      }
       steps {
-        sh 'docker compose build'
+        sh 'docker build -t $IMAGE:$TAG .'
+
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub-credentials',
+          usernameVariable: 'REG_USER',
+          passwordVariable: 'REG_PASS'
+        )]) {
+          sh 'echo "$REG_PASS" | docker login -u "$REG_USER" --password-stdin'
+          sh 'docker push $IMAGE:$TAG'
+        }
       }
     }
 
-    stage('Deploy') {
+    stage('Deploy dev / qa') {
+      agent any
+      when {
+        anyOf {
+          branch 'dev'
+          branch 'qa'
+        }
+      }
       steps {
-        sh 'docker compose up -d --wait'
+        script {
+          deployTo(env.BRANCH_NAME)
+        }
       }
     }
   }
 
   post {
     success {
-      echo 'Pipeline berhasil: cart-api berjalan di port 3000'
+      echo 'Pipeline berhasil!'
     }
     failure {
       echo 'Pipeline gagal: cek stage yang berwarna merah'
     }
   }
 }
+
 
 
